@@ -1,13 +1,9 @@
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
-# from pykiwoom.kiwoom import Kiwoom
-# import time
-# import asyncio
 import logging
-# import pythoncom
 import numpy as np
-import sqlite3  # ★ 추가
+import sqlite3  
 import os
 
 # 로깅 설정
@@ -25,7 +21,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 ###############################
 # 1) DB에서 데이터 로드 (수정)
 ###############################
@@ -34,17 +29,18 @@ app.add_middleware(
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SQLITE_DB_PATH = os.path.join(BASE_DIR, "my_stock.db")
 TABLE_NAME = "krx_stock_data"
+FINANCIAL_TABLE_NAME = "stock_data"  # 금융 데이터 테이블 이름을 'stock_data'로 변경
 
 def load_data_from_sqlite():
     """
-    SQLite DB에서 데이터를 읽어오고,
+    SQLite DB에서 krx_stock_data 테이블의 데이터를 읽어오고,
     기존 엑셀에서 하던 전처리를 동일하게 수행한 뒤 df를 반환.
     """
     conn = sqlite3.connect(SQLITE_DB_PATH)
     df_local = pd.read_sql(f"SELECT * FROM {TABLE_NAME}", conn)
     conn.close()
 
-    # 엑셀 읽었을 때처럼 NaN -> "N/A" 처리
+    # NaN -> "N/A" 처리
     df_local = df_local.fillna("N/A")
 
     # -------------------------------
@@ -121,11 +117,30 @@ def load_data_from_sqlite():
 
     return df_local
 
+def load_financial_data_from_sqlite():
+    """
+    SQLite DB에서 stock_data 테이블의 데이터를 읽어오고,
+    기존 엑셀에서 하던 전처리를 동일하게 수행한 뒤 financial_df를 반환.
+    """
+    conn = sqlite3.connect(SQLITE_DB_PATH)
+    financial_df_local = pd.read_sql(f"SELECT * FROM {FINANCIAL_TABLE_NAME}", conn)
+    conn.close()
 
-# (★ 기존에 엑셀 로드하던 코드는 제거/주석 처리했습니다.)
-# EXCEL_FILE_PATH = r"C:\Users\redwh\Desktop\개발\stock\krx_stock_data_sorted.xlsx"
-# df = pd.read_excel(EXCEL_FILE_PATH)
-# df = df.fillna("N/A")
+    # NaN -> "N/A" 처리
+    financial_df_local = financial_df_local.fillna("N/A")
+
+    # -------------------------------
+    # 기존 엑셀 로드 시와 동일한 숫자형 변환 로직
+    # -------------------------------
+    financial_df_local["매출액"] = financial_df_local["매출액"].apply(convert_financial_revenue)
+    financial_df_local["영업이익"] = financial_df_local["영업이익"].apply(convert_financial_operating_profit)
+    financial_df_local["당기순이익"] = financial_df_local["당기순이익"].apply(convert_financial_net_income)
+    financial_df_local["영업이익률"] = financial_df_local.apply(calculate_operating_income_rate, axis=1)
+    financial_df_local["부채총계"] = financial_df_local["부채총계"].apply(convert_financial_total_debt)
+    financial_df_local["자본총계"] = financial_df_local["자본총계"].apply(convert_financial_total_equity)
+    financial_df_local["부채비율"] = financial_df_local.apply(calculate_debt_ratio, axis=1)
+
+    return financial_df_local
 
 # -----------------------------
 # 숫자 변환 함수들 (기존 코드 그대로)
@@ -140,7 +155,10 @@ def convert_marketcap(value):
             return trillion
         elif "억" in value:
             return float(value.replace("억", "").strip()) * 10**8
-    return float(value)
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return 0.0
 
 def convert_revenue(value):
     if isinstance(value, str):
@@ -155,7 +173,10 @@ def convert_revenue(value):
             if len(parts) > 1 and parts[1]:
                 trillion += float(parts[1].strip()) * 10**8
             return trillion
-    return float(value)
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return 0
 
 def convert_operating_income(value):
     if isinstance(value, str):
@@ -170,7 +191,10 @@ def convert_operating_income(value):
             if len(parts) > 1 and parts[1]:
                 trillion += float(parts[1].strip()) * 10**8
             return trillion
-    return float(value)
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return 0
 
 def convert_net_income_rate(value):
     if isinstance(value, str):
@@ -186,7 +210,10 @@ def convert_net_income_rate(value):
                 return float(value)
             except ValueError:
                 return 0
-    return float(value)
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return 0
 
 def convert_operating_income_rate(value):
     if isinstance(value, str):
@@ -202,7 +229,10 @@ def convert_operating_income_rate(value):
                 return float(value)
             except ValueError:
                 return 0
-    return float(value)
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return 0
 
 def convert_eps(value):
     if isinstance(value, str):
@@ -213,7 +243,10 @@ def convert_eps(value):
             return float(value)
         except ValueError:
             return 0
-    return float(value)
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return 0
 
 def convert_per(value):
     if isinstance(value, str):
@@ -224,7 +257,10 @@ def convert_per(value):
             return float(value)
         except ValueError:
             return np.nan
-    return float(value)
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return np.nan
 
 def convert_pbr(value):
     if isinstance(value, str):
@@ -235,7 +271,10 @@ def convert_pbr(value):
             return float(value)
         except ValueError:
             return np.nan
-    return float(value)
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return np.nan
 
 def convert_dividend_yield(value):
     if isinstance(value, str):
@@ -252,11 +291,81 @@ def convert_dividend_yield(value):
     except (ValueError, TypeError):
         return np.nan
 
+def convert_financial_revenue(value):
+    if isinstance(value, str):
+        if value.upper() == "N/A" or value == "-":
+            return 0
+        value = value.replace(",", "")
+        try:
+            return float(value)
+        except ValueError:
+            return 0
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return 0
+
+def convert_financial_operating_profit(value):
+    if isinstance(value, str):
+        if value.upper() == "N/A" or value.strip() == "-":
+            return 0
+        value = value.replace(",", "")
+        try:
+            return float(value)
+        except ValueError:
+            return 0
+    try:
+        return float(value) if pd.notnull(value) else 0
+    except (ValueError, TypeError):
+        return 0
+
+def convert_financial_net_income(value):
+    if isinstance(value, str):
+        if value.upper() == "N/A" or value.strip() == "-":
+            return 0
+        value = value.replace(",", "")
+        try:
+            return float(value)
+        except ValueError:
+            return 0
+    try:
+        return float(value) if pd.notnull(value) else 0
+    except (ValueError, TypeError):
+        return 0
+
+def convert_financial_total_debt(value):
+    if isinstance(value, str):
+        if value.upper() == "N/A" or value.strip() == "-":
+            return 0
+        value = value.replace(",", "")
+        try:
+            return float(value)
+        except ValueError:
+            return 0
+    try:
+        return float(value) if pd.notnull(value) else 0
+    except (ValueError, TypeError):
+        return 0
+
+def convert_financial_total_equity(value):
+    if isinstance(value, str):
+        if value.upper() == "N/A" or value.strip() == "-":
+            return 0
+        value = value.replace(",", "")
+        try:
+            return float(value)
+        except ValueError:
+            return 0
+    try:
+        return float(value) if pd.notnull(value) else 0
+    except (ValueError, TypeError):
+        return 0
 
 # ----------------------------------------
-# 전역 df (★ DB에서 읽어온 결과 저장)
+# 전역 df 및 financial_df (★ DB에서 읽어온 결과 저장)
 # ----------------------------------------
 df = None
+financial_df = None
 
 # ----------------------------------------
 # 연도별 컬럼 맵핑 (기존 코드)
@@ -317,102 +426,19 @@ YEAR_TO_DIVIDEND_YIELD_COLUMN = {
     "2024": "2024.12 시가배당률(%)",
 }
 
-
 # ----------------------------------------
-# 키움 API 클래스화 (기존 코드와 동일)
+# FastAPI 이벤트: 앱 시작 시점
 # ----------------------------------------
-# class KiwoomAPI:
-#     def __init__(self):
-#         self.kiwoom = Kiwoom()
-#         self.data_received = False
-#         self.raw_data = None
-#         self.screen_no_counter = 1000
-#         self.kiwoom.OnReceiveTrData = self.on_receive_tr_data
-#         logger.info("OnReceiveTrData 이벤트 핸들러 등록 완료")
-
-#     def _get_screen_no(self) -> str:
-#         screen_no = str(self.screen_no_counter).zfill(4)
-#         self.screen_no_counter += 1
-#         if self.screen_no_counter > 9999:
-#             self.screen_no_counter = 1000
-#         return screen_no
-    
-#     def on_receive_tr_data(self, screen_no, rqname, trcode, recordname, prev_next):
-#         logger.info(f"on_receive_tr_data called with rqname={rqname}, trcode={trcode}, screen_no={screen_no}")
-#         if rqname == "주식재무제표요청" and trcode == "OPT10087":
-#             try:
-#                 self.raw_data = self.kiwoom.GetCommDataEx(trcode, recordname)
-#                 logger.info(f"Received raw_data: {self.raw_data}")
-#                 self.data_received = True
-#             except Exception as e:
-#                 logger.error(f"키움 API 데이터 수신 중 오류 발생: {e}")
-#                 self.raw_data = None
-#                 self.data_received = True
-
-#     def get_revenue_history(self, stock_code: str):
-#         logger.info(f"get_revenue_history() called with stock_code={stock_code}")
-#         self.data_received = False
-#         self.raw_data = None
-
-#         try:
-#             logger.info("TR 요청값 설정 시작")
-#             self.kiwoom.SetInputValue("종목코드", stock_code)
-#             logger.info(f"SetInputValue - 종목코드: {stock_code}")
-
-#             self.kiwoom.SetInputValue("표시구분", "1")  # 연간 매출액 요청
-#             logger.info("SetInputValue - 표시구분: 1")
-#         except Exception as e:
-#             logger.error(f"SetInputValue 오류: {e}")
-#             return {}
-
-#         screen_no = self._get_screen_no()
-#         try:
-#             logger.info("CommRqData 호출 시작")
-#             self.kiwoom.CommRqData("주식재무제표요청", "OPT10087", 0, screen_no) 
-#             logger.info("CommRqData 호출 완료")
-#         except Exception as e:
-#             logger.error(f"CommRqData 오류: {e}")
-#             return {}
-
-#         logger.info("데이터 수신 대기 시작")
-#         for i in range(30):
-#             pythoncom.PumpWaitingMessages()
-#             if self.data_received:
-#                 logger.info("데이터 수신 완료")
-#                 break
-#             logger.info(f"데이터 수신 대기 중... ({i + 1}/30)")
-#             time.sleep(1)
-
-#         if not self.raw_data:
-#             logger.error("키움 API 데이터 수신 실패")
-#             return {}
-
-#         logger.info(f"키움 API 데이터 수신 성공: {self.raw_data}")
-#         logger.info("데이터 변환 없이 원본 데이터 반환")
-#         return {"raw_data": self.raw_data}
-
-# # 키움 API 인스턴스
-# kiwoom_api = KiwoomAPI()
-
-
-# # ----------------------------------------
-# # FastAPI 이벤트: 앱 시작 시점
-# # ----------------------------------------
 @app.on_event("startup")
 async def startup_event():
-    # logger.info("키움 Open API 로그인 중...")
-    # kiwoom_api.kiwoom.CommConnect(block=True)
-    # while kiwoom_api.kiwoom.GetConnectState() == 0:
-    #     logger.info("키움 Open API 로그인 대기 중...")
-    #     await asyncio.sleep(1)
-    # logger.info("키움 Open API 로그인 완료")
-
-    # (★ 추가) 앱 시작 시점에 DB에서 데이터 불러오기
-    global df
+    global df, financial_df
     logger.info("SQLite에서 krx_stock_data 테이블을 불러옵니다...")
     df = load_data_from_sqlite()
-    logger.info(f"DB로부터 데이터를 성공적으로 로드했습니다. 총 {len(df)}건")
+    logger.info(f"DB로부터 krx_stock_data 데이터를 성공적으로 로드했습니다. 총 {len(df)}건")
 
+    logger.info("SQLite에서 stock_data 테이블을 불러옵니다...")
+    financial_df = load_financial_data_from_sqlite()
+    logger.info(f"DB로부터 stock_data 데이터를 성공적으로 로드했습니다. 총 {len(financial_df)}건")
 
 # ----------------------------------------
 # 기타 유틸 함수
@@ -426,6 +452,23 @@ def sanitize_value(value):
         return 0
     return value
 
+def calculate_operating_income_rate(row):
+    try:
+        if row["매출액"] == 0:
+            return 0.0
+        return round((row["영업이익"] / row["매출액"]) * 100, 1)
+    except Exception as e:
+        logger.error(f"영업이익률 계산 중 오류 발생: {e}")
+        return 0.0
+
+def calculate_debt_ratio(row):
+    try:
+        if row["자본총계"] == 0:
+            return 0.0
+        return round((row["부채총계"] / row["자본총계"]) * 100, 1)
+    except Exception as e:
+        logger.error(f"부채비율 계산 중 오류 발생: {e}")
+        return 0.0
 
 # ----------------------------------------
 # 2) 각종 API 라우터 (기존 로직 동일)
@@ -451,7 +494,6 @@ def get_stock_data(query: str = Query(..., description="종목 코드 또는 종
         return {"stocks": data}
     except Exception as e:
         return {"error": f"서버 오류 발생: {str(e)}", "stocks": []}
-
 
 @app.get("/top-marketcap")
 def get_top_marketcap():
@@ -505,25 +547,6 @@ def format_revenue(value):
     except (ValueError, TypeError):
         return "N/A"
 
-
-# @app.get("/annual-sales")
-# def get_annual_sales(stock_code: str):
-#     logger.info(f"/annual-sales called with stock_code={stock_code}")
-#     try:
-#         response = kiwoom_api.get_revenue_history(stock_code)
-#         logger.info(f"Received Kiwoom data: {response}")
-#         if not response or "raw_data" not in response:
-#             logger.error("키움 API에서 데이터를 반환하지 않았습니다.")
-#             return {"annual_sales": [], "error": "키움 API 데이터가 없습니다."}
-
-#         raw_data = response["raw_data"]
-#         logger.info(f"Final raw_data: {raw_data}")
-#         return {"annual_sales": raw_data}
-#     except Exception as e:
-#         logger.error(f"연간 매출액 조회 중 오류 발생: {e}")
-#         return {"annual_sales": [], "error": str(e)}
-
-
 @app.get("/top-operating-income")
 def get_top_operating_income(year: str = Query(..., description="년도 (예: 2021, 2022, 2023, 2024)")):
     global df
@@ -562,7 +585,6 @@ def format_operating_income(value):
     except (ValueError, TypeError):
         return "N/A"
 
-
 @app.get("/top-net-income")
 def get_top_net_income(year: str = Query(..., description="년도 (예: 2021, 2022, 2023, 2024)")):
     global df
@@ -590,7 +612,6 @@ def format_net_income_rate(value):
         return f"{value:.2f}%"
     except (ValueError, TypeError):
         return "N/A"
-
 
 @app.get("/top-operating-income-rate")
 def get_top_operating_income_rate(year: str = Query(..., description="년도 (예: 2021, 2022, 2023, 2024)")):
@@ -620,7 +641,6 @@ def format_operating_income_rate(value):
     except (ValueError, TypeError):
         return "N/A"
 
-
 @app.get("/top-eps")
 def get_top_eps(year: str = Query(..., description="년도 (예: 2021, 2022, 2023, 2024)")):
     global df
@@ -648,7 +668,6 @@ def format_eps(value):
         return f"{int(value):,}원"
     except (ValueError, TypeError):
         return "N/A"
-
 
 @app.get("/top-per")
 def get_top_per(year: str = Query(..., description="년도 (예: 2021, 2022, 2023, 2024)")):
@@ -709,7 +728,6 @@ def format_per(value):
     except (ValueError, TypeError):
         return "N/A"
 
-
 @app.get("/top-pbr")
 def get_top_pbr(year: str = Query(..., description="년도 (예: 2021, 2022, 2023, 2024)")):
     global df
@@ -769,7 +787,6 @@ def format_pbr(value):
     except (ValueError, TypeError):
         return "N/A"
 
-
 @app.get("/top-dividend-yield")
 def get_top_dividend_yield(year: str = Query(..., description="년도 (예: 2021, 2022, 2023, 2024)")):
     global df
@@ -803,26 +820,10 @@ def format_dividend_yield(value):
     except (ValueError, TypeError):
         return "N/A"
 
-
 # ----------------------------------------
-# 여기서부터는 "financial_data_sample.xlsx" 사용 로직 (기존 그대로)
+# 여기서부터는 "financial_data_sample.xlsx" 사용 로직 제거
 # ----------------------------------------
-FINANCIAL_EXCEL_FILE_PATH = r"C:\Users\redwh\Desktop\개발\stock\financial_data_sample.xlsx"
-financial_df = pd.read_excel(FINANCIAL_EXCEL_FILE_PATH)
-financial_df = financial_df.fillna("N/A")
-
-def convert_financial_revenue(value):
-    if isinstance(value, str):
-        if value.upper() == "N/A" or value == "-":
-            return 0
-        value = value.replace(",", "")
-        try:
-            return float(value)
-        except ValueError:
-            return 0
-    return float(value)
-
-financial_df["매출액"] = financial_df["매출액"].apply(convert_financial_revenue)
+# 기존 엑셀 로드 로직을 제거하고, 데이터베이스에서 로드된 financial_df 사용
 
 @app.get("/financial-annual-sales")
 def get_financial_annual_sales(stock_name: str = Query(..., description="기업의 종목명")):
@@ -845,20 +846,6 @@ def get_financial_annual_sales(stock_name: str = Query(..., description="기업�
         logger.error(f"연간 매출액 조회 중 오류 발생: {e}")
         return {"annual_sales": [], "error": str(e)}
 
-
-def convert_financial_operating_profit(value):
-    if isinstance(value, str):
-        if value.upper() == "N/A" or value.strip() == "-":
-            return 0
-        value = value.replace(",", "")
-        try:
-            return float(value)
-        except ValueError:
-            return 0
-    return float(value) if pd.notnull(value) else 0
-
-financial_df["영업이익"] = financial_df["영업이익"].apply(convert_financial_operating_profit)
-
 @app.get("/financial-operating-profit")
 def get_financial_operating_profit(stock_name: str = Query(..., description="기업의 종목명")):
     try:
@@ -874,20 +861,6 @@ def get_financial_operating_profit(stock_name: str = Query(..., description="기
     except Exception as e:
         logger.error(f"영업이익 조회 중 오류 발생: {e}")
         return {"operating_profit": [], "error": str(e)}
-
-
-def convert_financial_net_income(value):
-    if isinstance(value, str):
-        if value.upper() == "N/A" or value.strip() == "-":
-            return 0
-        value = value.replace(",", "")
-        try:
-            return float(value)
-        except ValueError:
-            return 0
-    return float(value) if pd.notnull(value) else 0
-
-financial_df["당기순이익"] = financial_df["당기순이익"].apply(convert_financial_net_income)
 
 @app.get("/financial-net-income")
 def get_financial_net_income(stock_name: str = Query(..., description="기업의 종목명")):
@@ -908,18 +881,6 @@ def get_financial_net_income(stock_name: str = Query(..., description="기업의
     except Exception as e:
         logger.error(f"순이익 조회 중 오류 발생: {e}")
         return {"net_income": [], "error": str(e)}
-
-
-def calculate_operating_income_rate(row):
-    try:
-        if row["매출액"] == 0:
-            return 0.0
-        return round((row["영업이익"] / row["매출액"]) * 100, 1)
-    except Exception as e:
-        logger.error(f"영업이익률 계산 중 오류 발생: {e}")
-        return 0.0
-
-financial_df["영업이익률"] = financial_df.apply(calculate_operating_income_rate, axis=1)
 
 @app.get("/financial-operating-income-rate")
 def get_financial_operating_income_rate(
@@ -943,43 +904,6 @@ def get_financial_operating_income_rate(
         logger.error(f"영업이익률 조회 중 오류 발생: {e}")
         return {"operating_income_rate": [], "error": str(e)}
 
-
-def convert_financial_total_debt(value):
-    if isinstance(value, str):
-        if value.upper() == "N/A" or value.strip() == "-":
-            return 0
-        value = value.replace(",", "")
-        try:
-            return float(value)
-        except ValueError:
-            return 0
-    return float(value) if pd.notnull(value) else 0
-
-def convert_financial_total_equity(value):
-    if isinstance(value, str):
-        if value.upper() == "N/A" or value.strip() == "-":
-            return 0
-        value = value.replace(",", "")
-        try:
-            return float(value)
-        except ValueError:
-            return 0
-    return float(value) if pd.notnull(value) else 0
-
-financial_df["부채총계"] = financial_df["부채총계"].apply(convert_financial_total_debt)
-financial_df["자본총계"] = financial_df["자본총계"].apply(convert_financial_total_equity)
-
-def calculate_debt_ratio(row):
-    try:
-        if row["자본총계"] == 0:
-            return 0.0
-        return round((row["부채총계"] / row["자본총계"]) * 100, 1)
-    except Exception as e:
-        logger.error(f"부채비율 계산 중 오류 발생: {e}")
-        return 0.0
-
-financial_df["부채비율"] = financial_df.apply(calculate_debt_ratio, axis=1)
-
 @app.get("/financial-debt-ratio")
 def get_financial_debt_ratio(stock_name: str = Query(..., description="기업의 종목명")):
     try:
@@ -998,6 +922,5 @@ def get_financial_debt_ratio(stock_name: str = Query(..., description="기업의
     except Exception as e:
         logger.error(f"부채비율 조회 중 오류 발생: {e}")
         return {"debt_ratio": [], "error": str(e)}
-
 
 # python -m uvicorn main:app --reload
