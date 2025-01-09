@@ -934,5 +934,15 @@ def get_financial_debt_ratio(stock_name: str = Query(..., description="기업의
     except Exception as e:
         logger.error(f"부채비율 조회 중 오류 발생: {e}")
         return {"debt_ratio": [], "error": str(e)}
+    
+
+
+# FastAPI 앱 정의 및 엔드포인트 작성 완료
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 8000))  # Cloudtype에서 제공하는 PORT 환경 변수 사용
+    uvicorn.run(app, host="0.0.0.0", port=port)  # 0.0.0.0으로 설정하여 외부에서 접근 가능
+
+
 
 # python -m uvicorn main:app --reload
