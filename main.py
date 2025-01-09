@@ -2,10 +2,10 @@ from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 # from pykiwoom.kiwoom import Kiwoom
-import time
-import asyncio
+# import time
+# import asyncio
 import logging
-import pythoncom
+# import pythoncom
 import numpy as np
 import sqlite3  # ★ 추가
 import os
