@@ -15,7 +15,7 @@ app = FastAPI()
 # CORS 설정
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # 실제 배포 시 특정 도메인으로 제한 권장
+    allow_origins=["https://stockter.netlify.app", "http://localhost:3000"],  # 실제 배포 시 특정 도메인으로 제한 권장
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
