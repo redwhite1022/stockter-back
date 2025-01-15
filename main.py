@@ -27,7 +27,7 @@ app.add_middleware(
 
 # 프로젝트 루트 디렉토리에 있는 DB 파일을 가리키도록 경로 수정
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SQLITE_DB_PATH = os.path.join(BASE_DIR, "my_stock.db")
+SQLITE_DB_PATH = os.path.join(BASE_DIR, "my_stock2.db")
 TABLE_NAME = "krx_stock_data"
 FINANCIAL_TABLE_NAME = "stock_data"  # 금융 데이터 테이블 이름을 'stock_data'로 변경
 
