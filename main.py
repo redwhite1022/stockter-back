@@ -616,15 +616,15 @@ def read_root():
 # ----------------------------------------
 @app.get("/data")
 def get_stock_data(query: str = Query(..., description="종목 코드 또는 종목명")):
-    global df
+    global annual_df  
     try:
         query = query.strip().lower()
         
-        df["종목코드"] = df["종목코드"].astype(str).str.strip().str.zfill(6)
-        df["종목명_lower"] = df["종목명"].str.lower().str.strip()
+        annual_df  ["종목코드"] = annual_df  ["종목코드"].astype(str).str.strip().str.zfill(6)
+        annual_df  ["종목명_lower"] = annual_df  ["종목명"].str.lower().str.strip()
 
-        filtered_df = df[
-            (df["종목코드"] == query) | (df["종목명_lower"].str.contains(query))
+        filtered_df = annual_df  [
+            (annual_df  ["종목코드"] == query) | (annual_df  ["종목명_lower"].str.contains(query))
         ]
 
         if filtered_df.empty:
@@ -638,9 +638,9 @@ def get_stock_data(query: str = Query(..., description="종목 코드 또는 종
 
 @app.get("/top-marketcap")
 def get_top_marketcap():
-    global df
+    global annual_df  
     try:
-        sorted_df = df.sort_values(by="시가총액(숫자형)", ascending=False).head(100)
+        sorted_df = annual_df.sort_values(by="시가총액(숫자형)", ascending=False).head(100)
         sorted_df = sorted_df.reset_index(drop=True)
         sorted_df["순위"] = sorted_df.index + 1
         sorted_df["시가총액"] = sorted_df["시가총액"].apply(lambda x: f"{x}억")
@@ -652,16 +652,16 @@ def get_top_marketcap():
 
 @app.get("/top-revenue")
 def get_top_revenue(year: str = Query(..., description="년도 (예: 2021, 2022, 2023, 2024)")):
-    global df
+    global annual_df
     try:
         revenue_column = YEAR_TO_REVENUE_COLUMN.get(year)
         if not revenue_column:
             return {"error": f"지원되지 않는 연도입니다: {year}."}
 
-        if revenue_column not in df.columns:
+        if revenue_column not in annual_df.columns:
             return {"error": f"{revenue_column} 데이터가 없습니다."}
 
-        sorted_df = df.sort_values(by=revenue_column, ascending=False).head(100)
+        sorted_df = annual_df.sort_values(by=revenue_column, ascending=False).head(100)
         sorted_df = sorted_df.reset_index(drop=True)
         sorted_df["순위"] = sorted_df.index + 1
         sorted_df["매출액"] = sorted_df[revenue_column].apply(format_revenue)
@@ -690,16 +690,16 @@ def format_revenue(value):
 
 @app.get("/top-operating-income")
 def get_top_operating_income(year: str = Query(..., description="년도 (예: 2021, 2022, 2023, 2024)")):
-    global df
+    global annual_df
     try:
         operating_income_column = YEAR_TO_OPERATING_INCOME_COLUMN.get(year)
         if not operating_income_column:
             return {"error": f"지원되지 않는 연도입니다: {year}."}
 
-        if operating_income_column not in df.columns:
+        if operating_income_column not in annual_df.columns:
             return {"error": f"{operating_income_column} 데이터가 없습니다."}
 
-        sorted_df = df.sort_values(by=operating_income_column, ascending=False).head(100)
+        sorted_df = annual_df.sort_values(by=operating_income_column, ascending=False).head(100)
         sorted_df = sorted_df.reset_index(drop=True)
         sorted_df["순위"] = sorted_df.index + 1
         sorted_df["영업이익"] = sorted_df[operating_income_column].apply(format_operating_income)
@@ -728,16 +728,16 @@ def format_operating_income(value):
 
 @app.get("/top-net-income")
 def get_top_net_income(year: str = Query(..., description="년도 (예: 2021, 2022, 2023, 2024)")):
-    global df
+    global annual_df
     try:
         net_income_rate_column = YEAR_TO_NET_INCOME_RATE_COLUMN.get(year)
         if not net_income_rate_column:
             return {"error": f"지원되지 않는 연도입니다: {year}."}
 
-        if net_income_rate_column not in df.columns:
+        if net_income_rate_column not in annual_df.columns:
             return {"error": f"{net_income_rate_column} 데이터가 없습니다."}
 
-        sorted_df = df.sort_values(by=net_income_rate_column, ascending=False).head(100)
+        sorted_df = annual_df.sort_values(by=net_income_rate_column, ascending=False).head(100)
         sorted_df = sorted_df.reset_index(drop=True)
         sorted_df["순위"] = sorted_df.index + 1
         sorted_df["순이익률"] = sorted_df[net_income_rate_column].apply(format_net_income_rate)
@@ -756,16 +756,16 @@ def format_net_income_rate(value):
 
 @app.get("/top-operating-income-rate")
 def get_top_operating_income_rate(year: str = Query(..., description="년도 (예: 2021, 2022, 2023, 2024)")):
-    global df
+    global annual_df
     try:
         operating_income_rate_column = YEAR_TO_OPERATING_INCOME_RATE_COLUMN.get(year)
         if not operating_income_rate_column:
             return {"error": f"지원되지 않는 연도입니다: {year}."}
 
-        if operating_income_rate_column not in df.columns:
+        if operating_income_rate_column not in annual_df.columns:
             return {"error": f"{operating_income_rate_column} 데이터가 없습니다."}
 
-        sorted_df = df.sort_values(by=operating_income_rate_column, ascending=False).head(100)
+        sorted_df = annual_df.sort_values(by=operating_income_rate_column, ascending=False).head(100)
         sorted_df = sorted_df.reset_index(drop=True)
         sorted_df["순위"] = sorted_df.index + 1
         sorted_df["영업이익률"] = sorted_df[operating_income_rate_column].apply(format_operating_income_rate)
@@ -784,16 +784,16 @@ def format_operating_income_rate(value):
 
 @app.get("/top-eps")
 def get_top_eps(year: str = Query(..., description="년도 (예: 2021, 2022, 2023, 2024)")):
-    global df
+    global annual_df
     try:
         eps_column = YEAR_TO_EPS_COLUMN.get(year)
         if not eps_column:
             return {"error": f"지원되지 않는 연도입니다: {year}."}
 
-        if eps_column not in df.columns:
+        if eps_column not in annual_df.columns:
             return {"error": f"{eps_column} 데이터가 없습니다."}
 
-        sorted_df = df.sort_values(by=eps_column, ascending=False).head(100)
+        sorted_df = annual_df.sort_values(by=eps_column, ascending=False).head(100)
         sorted_df = sorted_df.reset_index(drop=True)
         sorted_df["순위"] = sorted_df.index + 1
         sorted_df["EPS"] = sorted_df[eps_column].apply(format_eps)
@@ -812,16 +812,16 @@ def format_eps(value):
 
 @app.get("/top-per")
 def get_top_per(year: str = Query(..., description="년도 (예: 2021, 2022, 2023, 2024)")):
-    global df
+    global annual_df
     try:
         per_column = YEAR_TO_PER_COLUMN.get(year)
         if not per_column:
             return {"error": f"지원되지 않는 연도입니다: {year}."}
 
-        if per_column not in df.columns:
+        if per_column not in annual_df.columns:
             return {"error": f"{per_column} 데이터가 없습니다."}
 
-        df_filtered = df.dropna(subset=[per_column])
+        df_filtered = annual_df.dropna(subset=[per_column])
         if df_filtered.empty:
             return {"error": "유효한 PER 데이터가 없습니다.", "stocks": []}
 
@@ -837,16 +837,16 @@ def get_top_per(year: str = Query(..., description="년도 (예: 2021, 2022, 202
 
 @app.get("/bottom-per")
 def get_bottom_per(year: str = Query(..., description="년도 (예: 2021, 2022, 2023, 2024)")):
-    global df
+    global annual_df
     try:
         per_column = YEAR_TO_PER_COLUMN.get(year)
         if not per_column:
             return {"error": f"지원되지 않는 연도입니다: {year}."}
 
-        if per_column not in df.columns:
+        if per_column not in annual_df.columns:
             return {"error": f"{per_column} 데이터가 없습니다."}
 
-        df_filtered = df.dropna(subset=[per_column])
+        df_filtered = annual_df.dropna(subset=[per_column])
         if df_filtered.empty:
             return {"error": "유효한 PER 데이터가 없습니다.", "stocks": []}
 
@@ -871,16 +871,16 @@ def format_per(value):
 
 @app.get("/top-pbr")
 def get_top_pbr(year: str = Query(..., description="년도 (예: 2021, 2022, 2023, 2024)")):
-    global df
+    global annual_df
     try:
         pbr_column = YEAR_TO_PBR_COLUMN.get(year)
         if not pbr_column:
             return {"error": f"지원되지 않는 연도입니다: {year}."}
 
-        if pbr_column not in df.columns:
+        if pbr_column not in annual_df.columns:
             return {"error": f"{pbr_column} 데이터가 없습니다."}
 
-        df_filtered = df.dropna(subset=[pbr_column])
+        df_filtered = annual_df.dropna(subset=[pbr_column])
         if df_filtered.empty:
             return {"error": "유효한 PBR 데이터가 없습니다.", "stocks": []}
 
@@ -896,16 +896,16 @@ def get_top_pbr(year: str = Query(..., description="년도 (예: 2021, 2022, 202
 
 @app.get("/bottom-pbr")
 def get_bottom_pbr(year: str = Query(..., description="년도 (예: 2021, 2022, 2023, 2024)")):
-    global df
+    global annual_df
     try:
         pbr_column = YEAR_TO_PBR_COLUMN.get(year)
         if not pbr_column:
             return {"error": f"지원되지 않는 연도입니다: {year}."}
 
-        if pbr_column not in df.columns:
+        if pbr_column not in annual_df.columns:
             return {"error": f"{pbr_column} 데이터가 없습니다."}
 
-        positive_pbr_df = df[df[pbr_column] > 0]
+        positive_pbr_df = annual_df[annual_df[pbr_column] > 0]
         if positive_pbr_df.empty:
             return {"error": "양수 PBR 데이터가 없습니다.", "stocks": []}
 
@@ -930,16 +930,16 @@ def format_pbr(value):
 
 @app.get("/top-dividend-yield")
 def get_top_dividend_yield(year: str = Query(..., description="년도 (예: 2021, 2022, 2023, 2024)")):
-    global df
+    global annual_df
     try:
         dividend_yield_column = YEAR_TO_DIVIDEND_YIELD_COLUMN.get(year)
         if not dividend_yield_column:
             return {"error": f"지원되지 않는 연도입니다: {year}."}
 
-        if dividend_yield_column not in df.columns:
+        if dividend_yield_column not in annual_df.columns:
             return {"error": f"{dividend_yield_column} 데이터가 없습니다."}
 
-        df_filtered = df.dropna(subset=[dividend_yield_column])
+        df_filtered = annual_df.dropna(subset=[dividend_yield_column])
         if df_filtered.empty:
             return {"error": "유효한 시가배당률 데이터가 없습니다.", "stocks": []}
 
