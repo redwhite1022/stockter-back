@@ -1156,10 +1156,11 @@ METRIC_COLUMN_MAP = {
 @app.get("/quarterly-financial")
 def get_quarterly_financial(
     quarter: str = Query(..., description="예: 2023-Q3, 2023-Q4, 2024-Q1, 2024-Q2, 2024-Q3, 2024-Q4"),
-    metric: str = Query(..., description="예: 매출액, 영업이익, 영업이익률, 순이익률, EPS, PER, PBR, ROE, 시가배당률")
+    metric: str = Query(..., description="예: 매출액, 영업이익, 영업이익률, 순이익률, EPS, PER, PBR, ROE, 시가배당률"),
+    order: str = Query("top", description="정렬 순서: top (낮은값 우선) 또는 bottom (높은값 우선)")
 ):
     """
-    예: /quarterly-financial?quarter=2024-Q1&metric=PER
+    예: /quarterly-financial?quarter=2024-Q1&metric=PER&order=top
     """
     global quarterly_df
     try:
@@ -1178,29 +1179,27 @@ def get_quarterly_financial(
         temp_df = quarterly_df.copy()
         temp_df[final_column] = temp_df[final_column].replace("-", np.nan)
         temp_df[final_column] = pd.to_numeric(temp_df[final_column], errors="coerce")
-
-        # dropna, 정렬
         temp_df = temp_df.dropna(subset=[final_column])
-        temp_df = temp_df.sort_values(by=final_column, ascending=False)
-        top_100 = temp_df.head(100).reset_index(drop=True)
 
+        # PER, PBR 는 order 파라미터에 따라 정렬 방향 결정
+        if metric in ["PER", "PBR"]:
+            ascending = True if order == "top" else False
+            temp_df = temp_df.sort_values(by=final_column, ascending=ascending)
+        else:
+            # 다른 지표는 내림차순
+            temp_df = temp_df.sort_values(by=final_column, ascending=False)
+            
+        top_100 = temp_df.head(100).reset_index(drop=True)
         column_title_for_front = f"{metric} ({quarter})"
         top_100[column_title_for_front] = top_100[final_column]
 
         # ───────────────────────────────────────────────
-        # 2) 지표별로 후처리(조/억 표기 or %/원/배 등)
-        # ───────────────────────────────────────────────
-
-        # (가정) 이미 존재하는 조/억 변환 함수
-        # format_revenue(value), format_operating_income(value)
+        # 2) 지표별 후처리 (생략: 기존 함수 그대로 사용)
         if metric == "매출액":
             top_100[column_title_for_front] = top_100[column_title_for_front].apply(format_revenue)
-
         elif metric == "영업이익":
             top_100[column_title_for_front] = top_100[column_title_for_front].apply(format_operating_income)
-
         elif metric in ["영업이익률", "순이익률", "시가배당률"]:
-            # float -> xx.xx%
             def append_percent(x):
                 try:
                     if pd.isnull(x):
@@ -1208,24 +1207,17 @@ def get_quarterly_financial(
                     return f"{float(x):.2f}%"
                 except (ValueError, TypeError):
                     return "N/A"
-
             top_100[column_title_for_front] = top_100[column_title_for_front].apply(append_percent)
-
         elif metric == "EPS":
-            # float -> xx.xx원 (소수점 버림 or 표시 여부는 자유)
             def append_won(x):
                 try:
                     if pd.isnull(x):
                         return "N/A"
-                    # 소수점 이하 없애고 3자리마다 콤마
                     return f"{int(x):,}원"
                 except (ValueError, TypeError):
                     return "N/A"
-
             top_100[column_title_for_front] = top_100[column_title_for_front].apply(append_won)
-
         elif metric in ["PER", "PBR"]:
-            # float -> xx.xx배
             def append_bae(x):
                 try:
                     if pd.isnull(x):
@@ -1233,11 +1225,8 @@ def get_quarterly_financial(
                     return f"{float(x):.2f}배"
                 except (ValueError, TypeError):
                     return "N/A"
-
             top_100[column_title_for_front] = top_100[column_title_for_front].apply(append_bae)
-
         elif metric == "ROE":
-            # float -> xx.xx%
             def append_percent2(x):
                 try:
                     if pd.isnull(x):
@@ -1245,22 +1234,16 @@ def get_quarterly_financial(
                     return f"{float(x):.2f}%"
                 except (ValueError, TypeError):
                     return "N/A"
-
             top_100[column_title_for_front] = top_100[column_title_for_front].apply(append_percent2)
 
-        # 3) 필요한 컬럼만
         top_100["순위"] = top_100.index + 1
         final_df = top_100[["순위", "종목명", column_title_for_front]].copy()
 
-        return {
-            "error": "",
-            "stocks": final_df.to_dict(orient="records")
-        }
+        return {"error": "", "stocks": final_df.to_dict(orient="records")}
 
     except Exception as e:
         logger.error(f"분기별 재무제표 API 오류: {e}")
         return {"error": str(e), "stocks": []}
-
 
 
 
