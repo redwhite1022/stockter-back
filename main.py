@@ -116,6 +116,14 @@ def load_annual_data_from_sqlite():
         else:
             df_local[dividend_yield_column] = np.nan
 
+    # ROE
+    for year in ['2021.12', '2022.12', '2023.12', '2024.12']:
+        col = f"{year} ROE(지배주주)"
+        if col in df_local.columns:
+            df_local[col] = df_local[col].apply(convert_roe)
+        else:
+            df_local[col] = np.nan
+
     return df_local
 
 def load_dart_data_from_sqlite():
@@ -240,6 +248,20 @@ def convert_operating_income_rate(value):
         return float(value)
     except (ValueError, TypeError):
         return 0
+
+def convert_roe(value):
+    if isinstance(value, str):
+        value = value.replace("%", "").replace(",", "").replace("배", "").strip()
+        if value in ["N/A", "-", ""]:
+            return np.nan
+        try:
+            return float(value)
+        except:
+            return np.nan
+    try:
+        return float(value)
+    except:
+        return np.nan
 
 def convert_eps(value):
     if isinstance(value, str):
@@ -448,6 +470,13 @@ YEAR_TO_DIVIDEND_YIELD_COLUMN = {
     "2022": "2022.12 시가배당률(%)",
     "2023": "2023.12 시가배당률(%)",
     "2024": "2024.12 시가배당률(%)",
+}
+
+YEAR_TO_ROE_COLUMN = {
+    "2021": "2021.12 ROE(지배주주)",
+    "2022": "2022.12 ROE(지배주주)",
+    "2023": "2023.12 ROE(지배주주)",
+    "2024": "2024.12 ROE(지배주주)",
 }
 
 # ------------------------------------
@@ -781,6 +810,38 @@ def format_operating_income_rate(value):
         return f"{value:.2f}%"
     except (ValueError, TypeError):
         return "N/A"
+
+@app.get("/top-roe")
+def get_top_roe(year: str = Query(..., description="년도 (예: 2021, 2022, 2023, 2024)")):
+    global annual_df
+    try:
+        roe_col = YEAR_TO_ROE_COLUMN.get(year)  # e.g. "2021.12 ROE(지배주주)"
+        if not roe_col:
+            return {"error": f"지원되지 않는 연도입니다: {year}.", "stocks": []}
+
+        if roe_col not in annual_df.columns:
+            return {"error": f"'{roe_col}' 데이터가 없습니다.", "stocks": []}
+
+        sorted_df = annual_df.sort_values(by=roe_col, ascending=False).head(100)
+        sorted_df = sorted_df.reset_index(drop=True)
+        sorted_df["순위"] = sorted_df.index + 1
+
+        # ROE 컬럼(%)
+        def format_roe_percent(v):
+            try:
+                x = float(v)
+                return f"{x:.2f}%"
+            except:
+                return "N/A"
+
+        sorted_df["ROE"] = sorted_df[roe_col].apply(format_roe_percent)
+
+        data = sorted_df[["순위", "종목명", "ROE"]].to_dict(orient="records")
+        return {"stocks": data}
+
+    except Exception as e:
+        return {"error": f"서버 오류: {str(e)}", "stocks": []}
+    
 
 @app.get("/top-eps")
 def get_top_eps(year: str = Query(..., description="년도 (예: 2021, 2022, 2023, 2024)")):
