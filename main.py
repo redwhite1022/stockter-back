@@ -1157,7 +1157,7 @@ METRIC_COLUMN_MAP = {
 def get_quarterly_financial(
     quarter: str = Query(..., description="예: 2023-Q3, 2023-Q4, 2024-Q1, 2024-Q2, 2024-Q3, 2024-Q4"),
     metric: str = Query(..., description="예: 매출액, 영업이익, 영업이익률, 순이익률, EPS, PER, PBR, ROE, 시가배당률"),
-    order: str = Query("top", description="정렬 순서: top (낮은값 우선) 또는 bottom (높은값 우선)")
+    order: str = Query("top", description="정렬 순서: 'top' (낮은 값 우선, 기본) 또는 'bottom' (높은 값 우선)")
 ):
     """
     예: /quarterly-financial?quarter=2024-Q1&metric=PER&order=top
@@ -1181,20 +1181,19 @@ def get_quarterly_financial(
         temp_df[final_column] = pd.to_numeric(temp_df[final_column], errors="coerce")
         temp_df = temp_df.dropna(subset=[final_column])
 
-        # PER, PBR 는 order 파라미터에 따라 정렬 방향 결정
+        # PER, PBR는 order 파라미터에 따라 정렬 방향 결정
         if metric in ["PER", "PBR"]:
+            # "top"이면 낮은 값 우선(ascending), "bottom"이면 높은 값 우선(ascending=False)
             ascending = True if order == "top" else False
             temp_df = temp_df.sort_values(by=final_column, ascending=ascending)
         else:
-            # 다른 지표는 내림차순
             temp_df = temp_df.sort_values(by=final_column, ascending=False)
-            
+
         top_100 = temp_df.head(100).reset_index(drop=True)
         column_title_for_front = f"{metric} ({quarter})"
         top_100[column_title_for_front] = top_100[final_column]
 
-        # ───────────────────────────────────────────────
-        # 2) 지표별 후처리 (생략: 기존 함수 그대로 사용)
+        # 후처리 (생략된 부분은 기존 코드와 동일)
         if metric == "매출액":
             top_100[column_title_for_front] = top_100[column_title_for_front].apply(format_revenue)
         elif metric == "영업이익":
