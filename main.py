@@ -5,6 +5,8 @@ import logging
 import numpy as np
 import sqlite3  
 import os
+import requests
+from bs4 import BeautifulSoup
 
 # -----------------------------
 # 로깅 설정
@@ -1367,6 +1369,80 @@ def get_quarterly_financial(
     except Exception as e:
         logger.error(f"분기별 재무제표 API 오류: {e}")
         return {"error": str(e), "stocks": []}
+    
+
+# ----------------------------------------
+# 뉴스 관련 
+# ----------------------------------------   
+
+@app.get("/news")
+def get_latest_news(stock_name: str = Query(..., description="종목명")):
+    """
+    stock_name(종목명)을 받아 네이버 뉴스에서 상위 30개의 기사를 스크래핑해 반환합니다.
+    """
+    if not stock_name.strip():
+        print("Error: 종목명이 비어있습니다.")
+        return {"error": "종목명이 비어있습니다.", "news": []}
+
+    # 1) 네이버 뉴스 검색 URL 구성
+    encoded_name = requests.utils.quote(stock_name)
+    base_url = "https://search.naver.com/search.naver"
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/114.0.0.0 Safari/537.36"
+        )
+    }
+
+    results = []
+    try:
+        # 2) 3페이지까지 순차적으로 요청 (start=1, 11, 21)
+        for start in [1, 11, 21]:
+            params = {
+                "where": "news",
+                "query": encoded_name,
+                "start": start
+            }
+            resp = requests.get(base_url, headers=headers, params=params, timeout=5)
+            if resp.status_code != 200:
+                error_message = f"네이버 뉴스 요청 실패 (status={resp.status_code})"
+                print(f"Error: {error_message}")
+                continue  # 다음 페이지로 이동
+
+            # 3) BeautifulSoup으로 파싱
+            soup = BeautifulSoup(resp.text, "html.parser")
+            news_elements = soup.select("a.news_tit")
+            if not news_elements:
+                error_message = f"관련 뉴스 기사를 찾지 못했습니다. (start={start})"
+                print(f"Error: {error_message}")
+                continue  # 다음 페이지로 이동
+
+            # 4) 최대 10개 뉴스 추출 (각 페이지당 10개)
+            for el in news_elements[:10]:
+                title = el.get("title") or el.get_text(strip=True)
+                link = el.get("href")
+                results.append({"title": title, "link": link})
+
+            # 현재까지 수집된 뉴스 개수 확인
+            if len(results) >= 30:
+                break  # 30개 수집 완료
+
+        # 5) 수집된 뉴스 개수 출력
+        news_count = len(results)
+        print(f"Fetched {news_count} news articles for stock: {stock_name}")
+
+        # 6) 최대 30개로 제한
+        results = results[:30]
+
+        # 7) 결과 반환
+        return {"error": "", "news": results}
+
+    except Exception as e:
+        error_message = f"예외 발생: {str(e)}"
+        print(f"Error: {error_message}")
+        return {"error": error_message, "news": []}
+
 
 
 # ----------------------------------------
