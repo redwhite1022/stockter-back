@@ -1136,24 +1136,21 @@ def get_financial_quarterly_sales(stock_name: str = Query(...)):
         if filtered_df.empty:
             return {"error": f"'{stock_name}' 종목 없음", "quarterly_sales": []}
 
-        # 동일 종목 여러 행 중 첫 번째만 사용
         row = filtered_df.iloc[0]
-
         results = []
         for i in range(1, 7):
-            # DB 컬럼명: "2023.Q1 매출액" ~ "2023.Q6 매출액"
             col_name = f"2023.Q{i} 매출액"
             if col_name not in row:
                 continue
 
-            # 분기명을 새로 매핑
             new_quarter_name = quarter_mapping.get(i, f"2023.Q{i}")
             raw_val = row[col_name]
-            val_in_100m = raw_val / 1e8 if raw_val else 0
+            # DB에 이미 '억' 단위라면, 1e8로 나누지 않고 그대로 사용
+            value_in_억 = raw_val if raw_val else 0
 
             results.append({
                 "분기": new_quarter_name,
-                "매출액": val_in_100m
+                "매출액": value_in_억
             })
 
         return {"quarterly_sales": results}
@@ -1182,13 +1179,14 @@ def get_financial_quarterly_operating_profit(stock_name: str = Query(...)):
                 continue
 
             raw_val = row[col_name]
-            val_in_100m = raw_val / 1e8 if raw_val else 0
+            # DB에 이미 '억' 단위라면, 1e8로 나누지 않고 그대로 사용
+            value_in_억 = raw_val if raw_val else 0
 
             new_quarter_name = quarter_mapping.get(i, f"2023.Q{i}")
 
             results.append({
                 "분기": new_quarter_name,
-                "영업이익": val_in_100m
+                "영업이익": value_in_억
             })
 
         return {"quarterly_operating_profit": results}
@@ -1217,13 +1215,14 @@ def get_financial_quarterly_net_income(stock_name: str = Query(...)):
                 continue
 
             raw_val = row[col_name]
-            val_in_100m = raw_val / 1e8 if raw_val else 0
+            # DB에 이미 '억' 단위라면, 1e8로 나누지 않고 그대로 사용
+            value_in_억 = raw_val if raw_val else 0
 
             new_quarter_name = quarter_mapping.get(i, f"2023.Q{i}")
 
             results.append({
                 "분기": new_quarter_name,
-                "순이익": val_in_100m
+                "순이익": value_in_억
             })
 
         return {"quarterly_net_income": results}
@@ -1231,6 +1230,7 @@ def get_financial_quarterly_net_income(stock_name: str = Query(...)):
     except Exception as e:
         logger.error(f"분기별 순이익 조회 중 오류: {e}")
         return {"quarterly_net_income": [], "error": str(e)}
+
 
 
 @app.get("/financial-quarterly-operating-income-rate")
