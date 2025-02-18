@@ -5,8 +5,18 @@ import logging
 import numpy as np
 import sqlite3  
 import os
+from fastapi.responses import JSONResponse
+import traceback
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import requests
 from bs4 import BeautifulSoup
+
+
+
 
 # -----------------------------
 # 로깅 설정
@@ -456,10 +466,6 @@ YEAR_TO_ROE_COLUMN = {
 # 분기별 데이터 로드 함수
 # ------------------------------------
 def load_quarterly_data_from_sqlite():
-    """
-    quarterly_data 테이블에서 분기별 데이터 불러오기.
-    '2023.Q1 매출액', '2023.Q2 매출액' 등의 컬럼이 이미 존재한다고 가정.
-    """
     conn = sqlite3.connect(SQLITE_DB_PATH)
     df_local = pd.read_sql(f"SELECT * FROM {QUARTERLY_TABLE_NAME}", conn)
     conn.close()
@@ -467,36 +473,91 @@ def load_quarterly_data_from_sqlite():
     # NaN -> "N/A"
     df_local = df_local.fillna("N/A")
 
-    # 시가총액(숫자형) 변환
+    # 예: 시가총액 전처리
     if "시가총액" in df_local.columns:
         df_local["시가총액(숫자형)"] = df_local["시가총액"].apply(convert_marketcap)
 
-    # 2023.Q1 ~ 2023.Q6에 대해 매출액, 영업이익 등 숫자 변환
     for i in range(1, 7):
         q_prefix = f"2023.Q{i}"
+
+        # 매출액
         rev_col = f"{q_prefix} 매출액"
         if rev_col in df_local.columns:
             df_local[rev_col] = df_local[rev_col].apply(convert_revenue)
 
+        # 영업이익
         op_col = f"{q_prefix} 영업이익"
         if op_col in df_local.columns:
             df_local[op_col] = df_local[op_col].apply(convert_operating_income)
 
+        # 당기순이익
         net_col = f"{q_prefix} 당기순이익"
         if net_col in df_local.columns:
-            df_local[net_col] = df_local[net_col].apply(convert_operating_income)  # 당기순이익도 영업이익 변환 방식과 동일
+            df_local[net_col] = df_local[net_col].apply(convert_operating_income)  # 혹은 별도 convert_net_income() 사용
 
+        # 영업이익률 (예: "%" 제거)
         op_rate_col = f"{q_prefix} 영업이익률"
         if op_rate_col in df_local.columns:
             df_local[op_rate_col] = df_local[op_rate_col].apply(convert_operating_income_rate)
 
+        # 순이익률
         ni_rate_col = f"{q_prefix} 순이익률"
         if ni_rate_col in df_local.columns:
             df_local[ni_rate_col] = df_local[ni_rate_col].apply(convert_net_income_rate)
 
-        # 부채비율 등 다른 컬럼들도 필요 시 동일하게 처리
+        # ROE(지배주주)
+        roe_col = f"{q_prefix} ROE(지배주주)"
+        if roe_col in df_local.columns:
+            df_local[roe_col] = df_local[roe_col].apply(convert_roe)
+
+        # 부채비율, 당좌비율, 유보율 (문자 제거)
+        debt_col = f"{q_prefix} 부채비율"
+        if debt_col in df_local.columns:
+            df_local[debt_col] = df_local[debt_col].apply(convert_net_income_rate)
+        quick_col = f"{q_prefix} 당좌비율"
+        if quick_col in df_local.columns:
+            df_local[quick_col] = df_local[quick_col].apply(convert_net_income_rate)
+        reserve_col = f"{q_prefix} 유보율"
+        if reserve_col in df_local.columns:
+            df_local[reserve_col] = df_local[reserve_col].apply(convert_net_income_rate)
+
+        # EPS(원)
+        eps_col = f"{q_prefix} EPS(원)"
+        if eps_col in df_local.columns:
+            df_local[eps_col] = df_local[eps_col].apply(convert_eps)
+
+        # PER(배)
+        per_col = f"{q_prefix} PER(배)"
+        if per_col in df_local.columns:
+            df_local[per_col] = df_local[per_col].apply(convert_per)
+
+        # BPS(원)
+        bps_col = f"{q_prefix} BPS(원)"
+        if bps_col in df_local.columns:
+            df_local[bps_col] = df_local[bps_col].apply(convert_eps)  # 또는 별도 convert_bps() 함수
+
+        # PBR(배)
+        pbr_col = f"{q_prefix} PBR(배)"
+        if pbr_col in df_local.columns:
+            df_local[pbr_col] = df_local[pbr_col].apply(convert_pbr)
+
+        # 주당배당금(원)
+        dps_col = f"{q_prefix} 주당배당금(원)"
+        if dps_col in df_local.columns:
+            df_local[dps_col] = df_local[dps_col].apply(convert_eps)
+
+        # 시가배당률(%)
+        yield_col = f"{q_prefix} 시가배당률(%)"
+        if yield_col in df_local.columns:
+            df_local[yield_col] = df_local[yield_col].apply(convert_dividend_yield)
+
+        # 배당성향(%)
+        payout_col = f"{q_prefix} 배당성향(%)"
+        if payout_col in df_local.columns:
+            df_local[payout_col] = df_local[payout_col].apply(convert_dividend_yield)
 
     return df_local
+
 
 # ----------------------------------------
 # 앱 시작 시점 이벤트: DB에서 데이터 로드
@@ -1302,19 +1363,31 @@ def get_financial_quarterly_debt_ratio(stock_name: str = Query(...)):
 
 
 # ----------------------------------------
-# (E) 분기별 특정 지표 정렬 조회 예시
+# (E) 분기별 특정 지표 정렬 조회 
 # ----------------------------------------
 METRIC_COLUMN_MAP = {
     "매출액": "매출액",
     "영업이익": "영업이익",
+    "당기순이익": "당기순이익",
     "영업이익률": "영업이익률",
     "순이익률": "순이익률",
+    "ROE": "ROE(지배주주)",
     "EPS": "EPS(원)",
     "PER": "PER(배)",
+    "BPS": "BPS(원)",
     "PBR": "PBR(배)",
-    "ROE": "ROE(지배주주)",
+    "주당배당금": "주당배당금(원)",
     "시가배당률": "시가배당률(%)",
-    # 필요한 지표가 있다면 여기에 추가
+    "배당성향": "배당성향(%)"
+}
+
+QUARTER_COLUMN_MAP = {
+    "2023-Q3": "2023.Q1",
+    "2023-Q4": "2023.Q2",
+    "2024-Q1": "2023.Q3",
+    "2024-Q2": "2023.Q4",
+    "2024-Q3": "2023.Q5",
+    "2024-Q4": "2023.Q6",
 }
 
 # 여기에선 예시로 '2023-Q3' -> '2023.Q1' 식의 역매핑이 필요할 수 있으니
@@ -1323,122 +1396,181 @@ METRIC_COLUMN_MAP = {
 @app.get("/quarterly-financial")
 def get_quarterly_financial(
     quarter: str = Query(..., description="예: 2023-Q3, 2023-Q4, 2024-Q1, ..."),
-    metric: str = Query(..., description="매출액, 영업이익, 영업이익률, etc."),
-    order: str = Query("top", description="정렬 순서: 'top' (오름차순) or 'bottom' (내림차순)")
+    metric: str = Query(..., description="매출액, 영업이익, 영업이익률, 등"),
+    order: str = Query("top", description="정렬 순서: 'top' (오름차순) 또는 'bottom' (내림차순)")
 ):
-    """
-    예) /quarterly-financial?quarter=2024-Q1&metric=PER&order=top
-    분기별 특정 지표 순위 내림차순/오름차순 정렬
-    """
     global quarterly_df
     try:
-        # (예시) quarter -> "2023.Q1" 등으로 매핑 필요 시 작성
-        # 여기서는 QUARTER_COLUMN_MAP이 있다고 가정
-        # quarter_prefix = QUARTER_COLUMN_MAP.get(quarter)  # 생략
-
+        # 사용자 입력값을 올바른 컬럼명 형식으로 매핑
+        quarter_prefix = QUARTER_COLUMN_MAP.get(quarter)
+        if not quarter_prefix:
+            return {"error": f"유효하지 않은 quarter={quarter}", "stocks": []}
+        
         metric_suffix = METRIC_COLUMN_MAP.get(metric)
         if not metric_suffix:
             return {"error": f"유효하지 않은 metric={metric}", "stocks": []}
-
-        # 예) final_column = f"{quarter_prefix} {metric_suffix}"
-        # 실제로는 2023-Q3 -> 2023.Q1이라는 매핑이 필요할 수도 있음
-        # 여기서는 단순 예시이므로 직접 구성 가정
-        final_column = "2023.Q1 " + metric_suffix  # 예시...
-
-        if final_column not in quarterly_df.columns:
-            return {"error": f"'{final_column}' 컬럼이 존재하지 않습니다.", "stocks": []}
-
+        
+        # 최종 컬럼명 (사용자에게 보여질 키)
+        final_column = f"{current_metric_display(metric)} ({quarter})"
+        # DB 컬럼명
+        db_column = f"{quarter_prefix} {metric_suffix}"
+        
+        if db_column not in quarterly_df.columns:
+            return {"error": f"'{db_column}' 컬럼이 존재하지 않습니다.", "stocks": []}
+        
         temp_df = quarterly_df.copy()
-        temp_df[final_column] = pd.to_numeric(temp_df[final_column], errors="coerce")
-        temp_df = temp_df.dropna(subset=[final_column])
-
-        # 정렬
+        temp_df[db_column] = pd.to_numeric(
+            temp_df[db_column].astype(str).str.replace(",", "").str.strip(),
+            errors="coerce"
+        )
+        temp_df = temp_df.dropna(subset=[db_column])
+        
         if metric in ["PER", "PBR"]:
             ascending = True if order == "top" else False
-            temp_df = temp_df.sort_values(by=final_column, ascending=ascending)
+            temp_df = temp_df.sort_values(by=db_column, ascending=ascending)
         else:
-            temp_df = temp_df.sort_values(by=final_column, ascending=False)
-
+            temp_df = temp_df.sort_values(by=db_column, ascending=False)
+        
         top_100 = temp_df.head(100).reset_index(drop=True)
         top_100["순위"] = top_100.index + 1
 
-        # 후속 처리(포맷팅) - 생략 (매출액이면 조/억 변환 등)
+        # 해당 지표에 맞게 포맷팅 처리
+        top_100[final_column] = top_100[db_column].apply(lambda x: format_metric_value(metric, x))
+        
+        response_df = top_100[["순위", "종목명", final_column]].copy()
 
-        return {"error": "", "stocks": top_100[["순위", "종목명", final_column]].to_dict(orient="records")}
-
+        return {
+            "error": "",
+            "stocks": response_df.to_dict(orient="records")
+        }
+    
     except Exception as e:
         logger.error(f"분기별 재무제표 API 오류: {e}")
         return {"error": str(e), "stocks": []}
-    
+
+
+def current_metric_display(metric):
+    # 예시: metric 이름을 그대로 반환 (필요시 추가 가공 가능)
+    return metric
+
+
+def format_metric_value(metric, value):
+    """
+    metric 별로 값을 포맷팅합니다.
+    - 매출액, 영업이익, 당기순이익: 기본단위 '억' / 10,000이상은 '조'
+    - 영업이익률, 순이익률, 시가배당률, 배당성향, ROE: 소수점 2자리 + '%'
+    - EPS, BPS, 주당배당금: 정수 + '원'
+    - PER, PBR: 소수점 2자리 + '배'
+    """
+    try:
+        if pd.isna(value):
+            return ""
+        
+        # 매출액, 영업이익, 당기순이익 (값은 억 단위)
+        if metric in ["매출액", "영업이익", "당기순이익"]:
+            # 1조 = 10,000억
+            if value >= 10000:
+                jo = int(value) // 10000
+                eok = int(value) % 10000
+                if eok == 0:
+                    return f"{jo}조"
+                else:
+                    return f"{jo}조 {eok}억"
+            else:
+                return f"{int(value)}억"
+        
+        # 영업이익률, 순이익률, 시가배당률, 배당성향, ROE
+        elif metric in ["영업이익률", "순이익률", "시가배당률", "배당성향", "ROE"]:
+            return f"{value:.2f}%"
+        
+        # EPS, BPS, 주당배당금
+        elif metric in ["EPS", "BPS", "주당배당금"]:
+            return f"{value:.0f}원"
+        
+        # PER, PBR
+        elif metric in ["PER", "PBR"]:
+            return f"{value:.2f}배"
+        
+        else:
+            return str(value)
+    except Exception as e:
+        return str(value)
+
+
+
 
 # ----------------------------------------
 # 뉴스 관련 
 # ----------------------------------------   
 
-@app.get("/news")
+@app.get("/latest-news")
 def get_latest_news(stock_name: str = Query(..., description="종목명")):
     """
-    stock_name(종목명)을 받아 네이버 뉴스에서 상위 30개의 기사를 스크래핑해 반환합니다.
+    stock_name으로 네이버 뉴스 검색 → 최대 30개 기사(title, link, summary, date) 반환
     """
-    if not stock_name.strip():
-        print("Error: 종목명이 비어있습니다.")
-        return {"error": "종목명이 비어있습니다.", "news": []}
-
-    # 네이버 뉴스 검색 URL 구성
-    encoded_name = requests.utils.quote(stock_name)
-    base_url = "https://search.naver.com/search.naver"
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/114.0.0.0 Safari/537.36"
-        )
-    }
-
-    results = []
     try:
-        # 3페이지까지 순차적으로 요청
-        for start in [1, 11, 21]:
-            params = {
-                "where": "news",
-                "query": stock_name,  # encoded_name이 아닌 stock_name을 바로 전달
-                "start": start
-            }
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+                " AppleWebKit/537.36 (KHTML, like Gecko)"
+                " Chrome/90.0.4430.93 Safari/537.36"
+            )
+        }
 
-            # 요청 전 URL 출력 (디버깅용)
-            print(f"Requesting: {base_url} with params: {params}")
-
-            # 요청
-            resp = requests.get(base_url, headers=headers, params=params, timeout=5)
-            print(f"Response Status: {resp.status_code}")  # 상태 코드 확인
-
-            if resp.status_code != 200:
-                print(f"Error: 네이버 뉴스 요청 실패 (status={resp.status_code})")
-                continue  # 다음 페이지로 이동
-
-            # BeautifulSoup으로 파싱
-            soup = BeautifulSoup(resp.text, "html.parser")
-            news_elements = soup.select("a.news_tit")
-            if not news_elements:
-                print(f"Error: 관련 뉴스 기사를 찾지 못했습니다. (start={start})")
+        all_news = []
+        # 1, 11, 21 => 총 3페이지(각 10개씩, 최대 30개)
+        for start_num in [1, 11, 21]:
+            url = (
+                "https://search.naver.com/search.naver"
+                f"?where=news&sm=tab_jum&query={stock_name}&start={start_num}"
+            )
+            res = requests.get(url, headers=headers, timeout=10)
+            if res.status_code != 200:
                 continue
 
-            # 뉴스 데이터 추출
-            for el in news_elements[:10]:
-                title = el.get("title") or el.get_text(strip=True)
-                link = el.get("href")
-                results.append({"title": title, "link": link})
+            soup = BeautifulSoup(res.text, "html.parser")
 
-            if len(results) >= 30:  # 최대 30개로 제한
-                break
+            # 네이버 뉴스 검색 결과는 일반적으로 <ul class="list_news"> 내 <li class="bx"> 구조
+            news_items = soup.select("ul.list_news > li.bx")
 
-        print(f"Fetched {len(results)} news articles for stock: {stock_name}")
-        return {"error": "", "news": results[:30]}  # 최대 30개 반환
+            for item in news_items:
+                # 기사 제목 및 링크
+                title_tag = item.select_one("a.news_tit")
+                if not title_tag:
+                    continue
+                title = title_tag.get("title", "").strip()
+                link = title_tag.get("href", "").strip()
 
+                # 요약
+                summary_tag = item.select_one("a.api_txt_lines.dsc_txt_wrap")
+                summary = summary_tag.get_text(strip=True) if summary_tag else ""
+
+                # 날짜/언론사 정보
+                date_tag = item.select_one("span.info")
+                date_text = date_tag.get_text(strip=True) if date_tag else ""
+
+                all_news.append({
+                    "title": title,
+                    "link": link,
+                    "summary": summary,
+                    "date": date_text
+                })
+
+        # 중복 링크 제거
+        unique_links = set()
+        final_list = []
+        for news in all_news:
+            if news["link"] not in unique_links:
+                unique_links.add(news["link"])
+                final_list.append(news)
+
+        # 상위 30개만 추출
+        final_list = final_list[:30]
+
+        return JSONResponse(content={"latest_news": final_list})
     except Exception as e:
-        print(f"Error: {str(e)}")
-        return {"error": str(e), "news": []}
-
+        traceback.print_exc()
+        return JSONResponse(content={"error": str(e)}, status_code=500)
 
 
 
@@ -1449,3 +1581,7 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))  # Cloudtype 등 환경에서 PORT 사용
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=port)  # 외부 접속 가능
+
+
+
+    # python -m uvicorn main:app --reload
