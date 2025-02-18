@@ -2,5 +2,6 @@ fastapi
 uvicorn
 pandas
 numpy
+selenium
 requests
-bs4
+beautifulsoup4
